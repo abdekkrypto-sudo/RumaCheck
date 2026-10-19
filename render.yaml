@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: rumacheck
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: RUMACHECK_SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///rumacheck.db
+      - key: BASE_URL
+        value: https://your-render-url.onrender.com
+      - key: RUMACHECK_ADMIN_USERNAME
+        value: admin
+      - key: RUMACHECK_ADMIN_PASSWORD
+        generateValue: true

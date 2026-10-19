@@ -1,0 +1,471 @@
+import os
+import secrets
+import smtplib
+import uuid
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from pathlib import Path
+
+from flask import Flask, render_template, request, redirect, url_for, flash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+
+def is_truthy(value):
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("RUMACHECK_SESSION_SECRET") or secrets.token_hex(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = is_truthy(os.environ.get("SESSION_COOKIE_SECURE", "false"))
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///rumacheck.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db = SQLAlchemy(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+
+GROUP_CHAT_LINK = os.environ.get("GROUP_CHAT_LINK", "https://chat.whatsapp.com/your_group_link_here")
+
+
+class User(db.Model, UserMixin):
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    full_name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150), nullable=True)
+    phone = db.Column(db.String(50), nullable=True)
+    role = db.Column(db.String(20), default="member")
+    theme = db.Column(db.String(10), default="light")
+
+
+class Task(db.Model):
+    __tablename__ = "tasks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_type = db.Column(db.String(50), nullable=False)
+    task_date = db.Column(db.String(20), nullable=False)
+    task_time = db.Column(db.String(20), nullable=False)
+    notes = db.Column(db.String(255), nullable=True)
+    done_by = db.Column(db.String(120), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default="done")
+
+
+class PasswordResetToken(db.Model):
+    __tablename__ = "password_reset_tokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    token = db.Column(db.String(200), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+def logo_exists():
+    return (STATIC_DIR / "logo.png").exists() or (STATIC_DIR / "logo.svg").exists()
+
+
+def send_email(subject, body, email_list):
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_port = int(os.environ.get("SMTP_PORT") or "587")
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_pass = os.environ.get("SMTP_PASSWORD")
+    sender = os.environ.get("MAIL_FROM") or smtp_user
+
+    if not smtp_host or not smtp_user or not smtp_pass:
+        return False
+
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = ", ".join(email_list)
+
+    try:
+        server = smtplib.SMTP(smtp_host, smtp_port)
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(sender, email_list, msg.as_string())
+        server.quit()
+        return True
+    except Exception:
+        return False
+
+
+def send_house_email(subject, body):
+    emails = [u.email for u in User.query.filter(User.email.isnot(None)).all() if u.email]
+    if not emails:
+        return False
+    return send_email(subject, body, emails)
+
+
+def create_default_users():
+    admin_user = os.environ.get("RUMACHECK_ADMIN_USERNAME", "admin")
+    admin_password = os.environ.get("RUMACHECK_ADMIN_PASSWORD")
+    admin_email = os.environ.get("RUMACHECK_ADMIN_EMAIL", "admin@rumacheck.local")
+
+    if admin_password:
+        existing_admin = User.query.filter_by(username=admin_user).first()
+        if not existing_admin:
+            db.session.add(User(
+                username=admin_user,
+                password_hash=generate_password_hash(admin_password),
+                full_name="Admin",
+                email=admin_email,
+                phone="",
+                role="admin",
+                theme="light"
+            ))
+            db.session.commit()
+    else:
+        if os.environ.get("FLASK_ENV") == "development":
+            fallback_password = "admin123"
+            existing_admin = User.query.filter_by(username=admin_user).first()
+            if not existing_admin:
+                db.session.add(User(
+                    username=admin_user,
+                    password_hash=generate_password_hash(fallback_password),
+                    full_name="Admin",
+                    email=admin_email,
+                    phone="",
+                    role="admin",
+                    theme="light"
+                ))
+                db.session.commit()
+                print("Warning: Using development fallback admin password. Set RUMACHECK_ADMIN_PASSWORD in production.")
+
+    default_housemates = [
+        ("sulthan", "Sulthan", "sulthan@example.com", "0771111111"),
+        ("ismael", "Ismael", "ismael@example.com", "0772222222"),
+        ("roby", "Roby", "roby@example.com", "0773333333"),
+        ("reza", "Reza", "reza@example.com", "0774444444"),
+        ("malik", "Malik", "malik@example.com", "0775555555"),
+        ("yuda", "Yuda", "yuda@example.com", "0776666666"),
+        ("zamir", "Zamir", "zamir@example.com", "0777777777"),
+        ("fadil", "Fadil", "fadil@example.com", "0778888888"),
+    ]
+
+    for username, full_name, email, phone in default_housemates:
+        if not User.query.filter_by(username=username).first():
+            db.session.add(User(
+                username=username,
+                password_hash=generate_password_hash("house123"),
+                full_name=full_name,
+                email=email,
+                phone=phone,
+                role="member",
+                theme="light"
+            ))
+
+    db.session.commit()
+
+
+def get_latest_task(task_type):
+    return Task.query.filter_by(task_type=task_type).order_by(Task.task_date.desc(), Task.task_time.desc()).first()
+
+
+def get_recent_tasks(limit=8):
+    return Task.query.order_by(Task.task_date.desc(), Task.task_time.desc()).limit(limit).all()
+
+
+def get_package_tasks():
+    return Task.query.filter_by(task_type="package").order_by(Task.task_date.desc(), Task.task_time.desc()).all()
+
+
+def get_next_cleaning_date():
+    latest = Task.query.filter_by(task_type="cleaning").order_by(Task.task_date.desc()).first()
+    if latest:
+        try:
+            dt = datetime.strptime(latest.task_date, "%Y-%m-%d")
+            return (dt + timedelta(days=14)).strftime("%Y-%m-%d")
+        except Exception:
+            return "Scheduled"
+    return "Not set"
+
+
+def get_monthly_summary():
+    month_prefix = datetime.utcnow().strftime("%Y-%m")
+    rows = db.session.execute(
+        db.text("""
+            SELECT task_type, COUNT(*) AS count
+            FROM tasks
+            WHERE SUBSTRING(task_date, 1, 7) = :month_prefix
+            GROUP BY task_type
+            ORDER BY count DESC
+        """),
+        {"month_prefix": month_prefix}
+    ).fetchall()
+    return [{"task_type": r[0], "count": r[1]} for r in rows]
+
+
+def get_calendar():
+    now = datetime.utcnow()
+    year = now.year
+    month = now.month
+    first_day = datetime(year, month, 1)
+    offset = first_day.weekday()
+    days_in_month = 31
+
+    if month in (4, 6, 9, 11):
+        days_in_month = 30
+    elif month == 2:
+        days_in_month = 29 if year % 4 == 0 else 28
+
+    task_dates = {t.task_date for t in Task.query.all()}
+
+    cells = []
+    current_day = 1
+    total = 42
+    for idx in range(total):
+        if idx < offset or current_day > days_in_month:
+            cells.append({"day": "", "has_task": False, "is_today": False})
+        else:
+            date_str = datetime(year, month, current_day).strftime("%Y-%m-%d")
+            cells.append({
+                "day": current_day,
+                "has_task": date_str in task_dates,
+                "is_today": date_str == now.strftime("%Y-%m-%d")
+            })
+            current_day += 1
+    return cells
+
+
+def send_task_alert(task_type, task_date, task_time, notes, done_by):
+    if task_type == "package":
+        message = (
+            f"Hello housemates,\n\n"
+            f"A package has been logged for: {notes}\n"
+            f"Expected date: {task_date}\n"
+            f"Expected time: {task_time}\n"
+            f"Logged by: {done_by}\n\n"
+            f"Please keep an eye out for it.\n"
+        )
+        return send_house_email("Package alert", message)
+    return True
+
+
+@app.route("/")
+def landing():
+    return render_template("landing.html", logo_exists=logo_exists())
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password_hash, password):
+            login_user(user)
+            return redirect(url_for("dashboard"))
+        flash("Invalid username or password.")
+
+    return render_template("login.html", logo_exists=logo_exists())
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("landing"))
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template(
+        "dashboard.html",
+        current_user=current_user,
+        logo_exists=logo_exists(),
+        group_chat_link=GROUP_CHAT_LINK,
+        latest_trash=get_latest_task("trash"),
+        latest_rose=get_latest_task("rose"),
+        recent_tasks=get_recent_tasks(8),
+        package_count=len(get_package_tasks()),
+        package_reminders=get_package_tasks(),
+        monthly_summary=get_monthly_summary(),
+        calendar_days=get_calendar(),
+        next_cleaning=get_next_cleaning_date()
+    )
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if request.method == "POST":
+        full_name = request.form.get("full_name", "").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        theme = request.form.get("theme", "light").strip()
+
+        if not full_name:
+            flash("Full name is required.")
+            return redirect(url_for("profile"))
+
+        current_user.full_name = full_name
+        current_user.email = email
+        current_user.phone = phone
+        current_user.theme = theme
+        db.session.commit()
+        flash("Profile updated.")
+        return redirect(url_for("profile"))
+
+    return render_template("profile.html", user=current_user, logo_exists=logo_exists())
+
+
+@app.route("/task", methods=["POST"])
+@login_required
+def add_task():
+    task_type = request.form.get("task_type", "").strip().lower()
+    task_date = request.form.get("task_date", "").strip()
+    task_time = request.form.get("task_time", "").strip()
+    notes = request.form.get("notes", "").strip()
+    package_name = request.form.get("package_name", "").strip()
+
+    if not task_date or not task_time:
+        flash("Date and time are required.")
+        return redirect(url_for("dashboard"))
+
+    done_by = current_user.full_name
+
+    if task_type == "package":
+        if not package_name:
+            flash("Package name is required.")
+            return redirect(url_for("dashboard"))
+        notes = f"{package_name} - {notes}" if notes else package_name
+
+    task = Task(
+        task_type=task_type,
+        task_date=task_date,
+        task_time=task_time,
+        notes=notes,
+        done_by=done_by,
+        status="done"
+    )
+    db.session.add(task)
+    db.session.commit()
+
+    if task_type == "package":
+        send_task_alert(task_type, task_date, task_time, notes, done_by)
+        flash("Package alert sent to the house.")
+        return redirect(url_for("dashboard"))
+
+    flash(f"{task_type.title()} logged.")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/admin")
+@login_required
+def admin():
+    if current_user.role != "admin":
+        flash("Admin access required.")
+        return redirect(url_for("dashboard"))
+    return render_template("admin.html", users=User.query.order_by(User.full_name.asc()).all(), logo_exists=logo_exists())
+
+
+@app.route("/send-house-email", methods=["POST"])
+@login_required
+def send_house_email_route():
+    if current_user.role != "admin":
+        flash("Admin access required.")
+        return redirect(url_for("dashboard"))
+
+    subject = request.form.get("subject", "").strip() or "RumaCheck house reminder"
+    message = request.form.get("message", "").strip()
+    if not message:
+        flash("Message cannot be empty.")
+        return redirect(url_for("admin"))
+
+    sent = send_house_email(subject, message)
+    if sent:
+        flash("Email sent to all housemates.")
+    else:
+        flash("Email not sent. Check SMTP settings.")
+    return redirect(url_for("admin"))
+
+
+@app.route("/password-reset-request", methods=["GET", "POST"])
+def password_reset_request():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        user = User.query.filter_by(email=email).first()
+        if user:
+            token = str(uuid.uuid4())
+            expires = datetime.utcnow() + timedelta(hours=2)
+            db.session.add(PasswordResetToken(user_id=user.id, token=token, expires_at=expires))
+            db.session.commit()
+
+            reset_url = f"{os.environ.get('BASE_URL', 'http://127.0.0.1:8000')}/reset-password/{token}"
+            send_email(
+                "RumaCheck password reset",
+                f"Hello {user.full_name},\n\nUse this link to reset your password:\n{reset_url}\n\nThis link expires in 2 hours.\n",
+                [user.email],
+            )
+        flash("If the email exists, a reset link has been sent.")
+        return redirect(url_for("login"))
+
+    return render_template("password_reset_request.html", logo_exists=logo_exists())
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    reset_entry = PasswordResetToken.query.filter_by(token=token).first()
+    if not reset_entry:
+        flash("Invalid or expired reset link.")
+        return redirect(url_for("login"))
+
+    if reset_entry.expires_at < datetime.utcnow():
+        db.session.delete(reset_entry)
+        db.session.commit()
+        flash("The password reset link has expired.")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        password = request.form.get("password", "").strip()
+        confirm = request.form.get("confirm_password", "").strip()
+
+        if len(password) < 8:
+            flash("Password must be at least 8 characters long.")
+            return redirect(url_for("reset_password", token=token))
+        if password != confirm:
+            flash("Passwords do not match.")
+            return redirect(url_for("reset_password", token=token))
+
+        user = User.query.get(reset_entry.user_id)
+        if user:
+            user.password_hash = generate_password_hash(password)
+            db.session.delete(reset_entry)
+            db.session.commit()
+            flash("Password updated successfully.")
+            return redirect(url_for("login"))
+
+    return render_template("reset_password.html", token=token, logo_exists=logo_exists())
+
+
+@app.route("/health")
+def health():
+    return {"status": "ok"}
+
+
+with app.app_context():
+    db.create_all()
+    create_default_users()
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
