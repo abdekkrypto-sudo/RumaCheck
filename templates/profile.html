@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RumaCheck Profile</title>
+  <meta name="theme-color" content="#E7B500">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="logo-mark">
+        {% if logo_exists %}
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="RumaCheck logo">
+        {% else %}
+          <img src="{{ url_for('static', filename='icon.svg') }}" alt="RumaCheck icon">
+        {% endif %}
+        <div class="logo-text">Profile</div>
+      </div>
+      <div class="top-actions">
+        <a href="{{ url_for('dashboard') }}" class="secondary-btn">Dashboard</a>
+        <a href="{{ url_for('logout') }}" class="secondary-btn">Logout</a>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <main class="profile-layout">
+      <div class="card">
+        <div class="avatar-box">{{ user.full_name[0].upper() }}</div>
+      </div>
+
+      <div class="card">
+        <h3>Update your profile</h3>
+
+        <form method="POST">
+          <label for="full_name">Full name</label>
+          <input id="full_name" name="full_name" type="text" value="{{ user.full_name }}" required>
+
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" value="{{ user.email or '' }}">
+
+          <label for="phone">Phone</label>
+          <input id="phone" name="phone" type="text" value="{{ user.phone or '' }}">
+
+          <label for="theme">Theme</label>
+          <select id="theme" name="theme">
+            <option value="light" {% if user.theme == 'light' %}selected{% endif %}>Light</option>
+            <option value="dark" {% if user.theme == 'dark' %}selected{% endif %}>Dark</option>
+          </select>
+
+          <button type="submit" class="primary-btn" style="margin-top: 18px;">Save profile</button>
+        </form>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

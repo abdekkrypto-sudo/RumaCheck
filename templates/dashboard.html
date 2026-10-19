@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RumaCheck Dashboard</title>
+  <meta name="theme-color" content="#E7B500">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="logo-mark">
+        {% if logo_exists %}
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="RumaCheck logo">
+        {% else %}
+          <img src="{{ url_for('static', filename='icon.svg') }}" alt="RumaCheck icon">
+        {% endif %}
+        <div class="logo-text">RumaCheck</div>
+      </div>
+
+      <div class="top-actions">
+        {% if group_chat_link %}
+          <a class="secondary-btn" href="{{ group_chat_link }}" target="_blank" rel="noopener">Group Chat</a>
+        {% endif %}
+        {% if current_user.role == "admin" %}
+          <a class="secondary-btn" href="{{ url_for('admin') }}">Admin</a>
+        {% endif %}
+        <a class="secondary-btn" href="{{ url_for('profile') }}">Profile</a>
+        <a class="secondary-btn" href="{{ url_for('logout') }}">Logout</a>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <main class="dashboard">
+      <section class="summary-grid">
+        <div class="summary-card">
+          <div class="label">Trash</div>
+          <div class="value">{{ latest_trash.done_by if latest_trash else 'No record' }}</div>
+          <div class="caption">
+            {% if latest_trash %}
+              Last logged: {{ latest_trash.task_date }} at {{ latest_trash.task_time }}
+            {% else %}
+              No trash log yet.
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="label">Rose</div>
+          <div class="value">{{ latest_rose.done_by if latest_rose else 'Pending' }}</div>
+          <div class="caption">
+            {% if latest_rose %}
+              Last fed: {{ latest_rose.task_date }} at {{ latest_rose.task_time }}
+            {% else %}
+              Rose still needs attention.
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="label">Packages</div>
+          <div class="value">{{ package_count }}</div>
+          <div class="caption">Open package alerts in the house.</div>
+        </div>
+
+        <div class="summary-card">
+          <div class="label">Deep Clean</div>
+          <div class="value">{{ next_cleaning }}</div>
+          <div class="caption">Recurring every 2 weeks on Sunday.</div>
+        </div>
+      </section>
+
+      <section class="section-grid">
+        <div class="card">
+          <h3>Quick Task Entry</h3>
+          <form method="POST" action="{{ url_for('add_task') }}">
+            <label for="task_type">Task Type</label>
+            <select id="task_type" name="task_type" required>
+              <option value="trash">Trash</option>
+              <option value="rose">Rose</option>
+              <option value="package">Package</option>
+              <option value="cleaning">Deep Cleaning</option>
+            </select>
+
+            <label for="task_date">Date</label>
+            <input type="date" id="task_date" name="task_date" required>
+
+            <label for="task_time">Time</label>
+            <input type="time" id="task_time" name="task_time" required>
+
+            <label for="notes">Notes</label>
+            <input type="text" id="notes" name="notes" placeholder="Optional detail">
+
+            <button type="submit" class="primary-btn">Save Task</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Package Alert</h3>
+          <form method="POST" action="{{ url_for('add_task') }}">
+            <input type="hidden" name="task_type" value="package">
+            <label for="package_name">Package Name</label>
+            <input id="package_name" name="package_name" type="text" placeholder="Amazon parcel" required>
+
+            <label for="package_date">Expected Date</label>
+            <input id="package_date" name="task_date" type="date" required>
+
+            <label for="package_time">Expected Time</label>
+            <input id="package_time" name="task_time" type="time" required>
+
+            <label for="package_notes">Notes</label>
+            <input id="package_notes" name="notes" type="text" placeholder="For Sulthan / front door / etc.">
+
+            <button type="submit" class="primary-btn">Send House Alert</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="section-grid">
+        <div class="card">
+          <h3>Calendar View</h3>
+          <div class="calendar-grid">
+            <div class="calendar-head">Mon</div>
+            <div class="calendar-head">Tue</div>
+            <div class="calendar-head">Wed</div>
+            <div class="calendar-head">Thu</div>
+            <div class="calendar-head">Fri</div>
+            <div class="calendar-head">Sat</div>
+            <div class="calendar-head">Sun</div>
+
+            {% for day in calendar_days %}
+              <div class="calendar-day {% if day.is_today %}is-today{% endif %} {% if day.has_task %}has-task{% endif %}">
+                {{ day.day }}
+                {% if day.has_task %}
+                  <span class="dot"></span>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Monthly Report</h3>
+          <ul class="task-list">
+            {% for item in monthly_summary %}
+              <li>
+                <strong>{{ item.task_type.title() }}</strong>
+                <span class="task-meta">{{ item.count }} recorded this month</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
+
+      <section class="section-grid">
+        <div class="card">
+          <h3>Recent Tasks</h3>
+          <ul class="task-list">
+            {% for item in recent_tasks %}
+              <li>
+                <strong>{{ item.task_type.title() }}</strong>
+                <span class="task-meta">{{ item.task_date }} at {{ item.task_time }}</span>
+                <span class="task-meta">Done by {{ item.done_by }}</span>
+                {% if item.notes %}
+                  <small class="small-text">{{ item.notes }}</small>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>Package Reminders</h3>
+          <ul class="task-list">
+            {% for item in package_reminders %}
+              <li>
+                <strong>{{ item.notes or 'Package' }}</strong>
+                <span class="task-meta">Due: {{ item.task_date }} at {{ item.task_time }}</span>
+                <span class="task-meta">Logged by {{ item.done_by }}</span>
+              </li>
+            {% else %}
+              <li>
+                <strong>No active reminders</strong>
+                <span class="task-meta">Everything is clear.</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js');
+    }
+  </script>
+</body>
+</html>

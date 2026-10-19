@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RumaCheck Login</title>
+  <meta name="theme-color" content="#E7B500">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="brand">
+      <div class="brand-title">RumaCheck</div>
+    </div>
+
+    <div class="login-card">
+      <h2>House Access</h2>
+
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          {% for message in messages %}
+            <div class="alert">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" required>
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required>
+
+        <button type="submit" class="primary-btn">Sign In</button>
+      </form>
+
+      <div style="margin-top: 18px;">
+        <a href="{{ url_for('password_reset_request') }}" class="ghost-btn" style="width: 100%;">Forgot password?</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

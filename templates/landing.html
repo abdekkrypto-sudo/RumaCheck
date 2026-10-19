@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RumaCheck</title>
+  <meta name="theme-color" content="#E7B500">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="logo-mark">
+        {% if logo_exists %}
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="RumaCheck logo">
+        {% else %}
+          <img src="{{ url_for('static', filename='icon.svg') }}" alt="RumaCheck icon">
+        {% endif %}
+        <div class="logo-text">RumaCheck</div>
+      </div>
+      <div class="top-actions">
+        <a href="{{ url_for('login') }}" class="secondary-btn">Login</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <h1>RumaCheck</h1>
+          <p>
+            The house management app for your home. Track trash, care for Rose,
+            monitor packages, and keep everybody on top of the weekly tasks and the
+            two-week deep-clean schedule.
+          </p>
+
+          <div class="hero-actions">
+            <a href="{{ url_for('login') }}" class="primary-btn">Open App</a>
+            <button type="button" class="secondary-btn" id="installButton">Install App</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="summary-card">
+            <div class="label">This week</div>
+            <div class="value">Trash + Rose</div>
+            <div class="caption">Fast checks for the whole house.</div>
+          </div>
+          <br>
+          <div class="summary-card">
+            <div class="label">Deep clean</div>
+            <div class="value">Sunday</div>
+            <div class="caption">Recurring every 2 weeks.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-grid">
+        <div class="feature">
+          <div class="icon">🗑️</div>
+          <h3>Trash Tracking</h3>
+          <p>Log who took the trash out and when, so nobody gets confused.</p>
+        </div>
+
+        <div class="feature">
+          <div class="icon">🐾</div>
+          <h3>Rose Care</h3>
+          <p>Record feeding times and keep the cat cared for.</p>
+        </div>
+
+        <div class="feature">
+          <div class="icon">📦</div>
+          <h3>Package Alerts</h3>
+          <p>Log expected deliveries and email the whole house.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    let deferredPrompt = null;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js');
+    }
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredPrompt = event;
+      const button = document.getElementById('installButton');
+      if (button) button.style.display = 'inline-flex';
+    });
+
+    document.getElementById('installButton')?.addEventListener('click', async () => {
+      if (!deferredPrompt) {
+        alert('This browser may not support install prompts. You can still use it in the browser.');
+        return;
+      }
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+    });
+  </script>
+</body>
+</html>

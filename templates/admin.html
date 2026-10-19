@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RumaCheck Admin</title>
+  <meta name="theme-color" content="#E7B500">
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="logo-mark">
+        {% if logo_exists %}
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="RumaCheck logo">
+        {% else %}
+          <img src="{{ url_for('static', filename='icon.svg') }}" alt="RumaCheck icon">
+        {% endif %}
+        <div class="logo-text">Admin</div>
+      </div>
+      <div class="top-actions">
+        <a href="{{ url_for('dashboard') }}" class="secondary-btn">Dashboard</a>
+        <a href="{{ url_for('logout') }}" class="secondary-btn">Logout</a>
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <main class="admin-grid">
+      <div class="card">
+        <h3>Housemates</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+              <tr>
+                <td>{{ user.full_name }}</td>
+                <td>{{ user.username }}</td>
+                <td>{{ user.email or 'No email' }}</td>
+                <td>{{ user.phone or 'No phone' }}</td>
+                <td>
+                  <span class="status-badge {{ 'success' if user.role == 'admin' else 'warning' }}">
+                    {{ user.role }}
+                  </span>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>Send reminder email</h3>
+        <form method="POST" action="{{ url_for('send_house_email_route') }}">
+          <label for="subject">Email Subject</label>
+          <input id="subject" name="subject" type="text" value="RumaCheck house reminder" required>
+
+          <label for="message">Message</label>
+          <textarea id="message" name="message" rows="7" required>Hi everyone, there are house tasks and reminders to check today.</textarea>
+
+          <button type="submit" class="primary-btn">Send to all housemates</button>
+        </form>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
